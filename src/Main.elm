@@ -1,9 +1,10 @@
 module Main exposing (..)
 
 import Browser
-import Html exposing (Html, button, div, input, span, text)
-import Html.Attributes exposing (checked, disabled, name, placeholder, type_, value)
-import Html.Events exposing (onClick, onInput)
+
+import Element exposing (Element, column, el, layout, row, text)
+import Element.Input as Input
+import Html exposing (Html)
 
 main =
   Browser.sandbox { init = init, update = update, view = view }
@@ -28,6 +29,7 @@ type alias Model = { under_measurements : UnderMeasurements
                    , bust_measurements : BustMeasurements
                    , unit : Unit
                    , size : Maybe String
+                   , error : Maybe String
                    }
 
 init : Model
@@ -41,6 +43,7 @@ init = { bust_measurements = { standing = Measurement Nothing
                               }
        , unit = Inches
        , size = Nothing
+       , error = Nothing
        }
 
 calculateSize : Model -> String
@@ -72,6 +75,7 @@ isJust (Measurement maybe) =
 
 type Msg
   = Calculate
+  | CantCalculate
   | SetUnit Unit
   | Loose Measurement
   | Comfy Measurement
@@ -89,6 +93,7 @@ update msg model =
   in
     case msg of
       Calculate -> { model | size = Just (calculateSize model) }
+      CantCalculate -> { model | error = Just "Cannot calculate without all measurements filled in." }
       SetUnit unit -> { model | unit = unit }
       Loose val -> { model | under_measurements = { under | loose = val } }
       Comfy val -> { model | under_measurements = { under | comfy_snug = val } }
@@ -99,42 +104,47 @@ update msg model =
 
 view : Model -> Html Msg
 view model =
-  div []
-    [ span [] [ unitCheckbox "Inches" Inches model.unit
-              , unitCheckbox "Millimeters" Millimeters model.unit
-              ]
-    , measurementInput model.under_measurements.loose Loose " Loose fit"
-    , measurementInput model.under_measurements.comfy_snug Comfy " Comfy snug"
-    , measurementInput model.under_measurements.tight Tight " Tight fit"
-    , measurementInput model.bust_measurements.standing Standing " Standing"
-    , measurementInput model.bust_measurements.leaning_forward Forward " Leaning forward"
-    , measurementInput model.bust_measurements.lying_down Lying " Lying down"
-    , button [ onClick Calculate, disabled <| not <| hasAllMeasurements model ] [text "Calculate Size"]
-    ]
+  layout [] <|
+    column []
+      [ unitsInput model.unit
+      , measurementInput model.under_measurements.loose Loose " Loose fit"
+      , measurementInput model.under_measurements.comfy_snug Comfy " Comfy snug"
+      , measurementInput model.under_measurements.tight Tight " Tight fit"
+      , measurementInput model.bust_measurements.standing Standing " Standing"
+      , measurementInput model.bust_measurements.leaning_forward Forward " Leaning forward"
+      , measurementInput model.bust_measurements.lying_down Lying " Lying down"
+      , case model.error of
+          Just message -> text message
+          Nothing -> Element.none
+      , Input.button []
+          { onPress = if not <| hasAllMeasurements model then
+                        Just Calculate
+                      else
+                        Just CantCalculate
+        , label = (text "Calculate Size")
+        }
+      ]
 
-unitCheckbox : String -> Unit -> Unit -> Html Msg
-unitCheckbox label unit currentUnit =
-  span []
-    [ text label
-    , input [ name "input-unit"
-            , type_ "radio"
-            , checked (currentUnit == unit)
-            , onInput (\_ -> (SetUnit unit))
-            ] []
-    ]
+unitsInput : Unit -> Element Msg
+unitsInput unit =
+  Input.radio []
+    { onChange = SetUnit
+    , selected = Just unit
+    , label = Input.labelAbove [] (text "Input Units")
+    , options = [ Input.option Inches (text "Inches")
+                , Input.option Millimeters (text "Millimeters")
+                ]
+    }
 
-measurementInput : Measurement -> (Measurement -> Msg) -> String -> Html Msg
+measurementInput : Measurement -> (Measurement -> Msg) -> String -> Element Msg
 measurementInput measurement msg label =
-  div []
-    [ input
-        [ onInput (\v -> msg <| Measurement <| String.toFloat v)
-        , placeholder "0.0"
-        , type_ "input"
-        , value (measurementAsString measurement)
-        ]
-        []
-    , text label
-    ]
+  el [] <|
+    Input.text []
+      { onChange = (\v -> msg <| Measurement <| String.toFloat v)
+      , text = (measurementAsString measurement)
+      , placeholder = Just <| Input.placeholder [] (text "0.0")
+      , label = Input.labelLeft [] (text label)
+      }
 
 measurementAsString : Measurement -> String
 measurementAsString (Measurement measurement) =
